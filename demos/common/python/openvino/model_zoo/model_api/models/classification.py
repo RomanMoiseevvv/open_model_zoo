@@ -86,3 +86,50 @@ class Classification(ImageModel):
             scores = softmax(scores)
         labels = [self.labels[i] if self.labels else "" for i in indices]
         return list(zip(indices, labels, scores))
+    
+    
+class CustomClassification(ImageModel):
+    __model__ = 'Classification'
+
+    def __init__(self, model_adapter, configuration=None, preload=False):
+        super().__init__(model_adapter, configuration, preload)
+        self._check_io_number(1, 6)
+
+        outputs = sorted(list(self.outputs.keys()))
+        if any('digit' in name for name in outputs):
+            self._len_output = 'length_logits'
+            self._digit_outputs = [f'digit{i}_logits' for i in range(1, 6)]
+        else:
+            self._len_output = outputs[0]
+            self._digit_outputs = outputs[1:]
+
+    def _load_labels(self, labels_file):
+        with open(labels_file, 'r') as f:
+            labels = []
+            for s in f:
+                begin_idx = s.find(' ')
+                if (begin_idx == -1):
+                    self.raise_error('The labels file has incorrect format.')
+                end_idx = s.find(',')
+                labels.append(s[(begin_idx + 1):end_idx])
+        return labels
+
+
+    @classmethod
+    def parameters(cls):
+        parameters = super().parameters()
+        parameters['resize_type'].update_default_value('crop')
+        parameters.update({
+            'topk': NumericalValue(value_type=int, default_value=1, min=1),
+            'labels': ListValue(description="List of class labels"),
+            'path_to_labels': StringValue(
+                description="Path to file with labels. Overrides the labels, if they sets via 'labels' parameter"
+            ),
+        })
+        return parameters
+
+    def postprocess(self, outputs, meta):
+        length_prediction = np.argmax(outputs[self._len_output])
+        digit_predictions = [np.argmax(outputs[key]) for key in self._digit_outputs]
+
+        return length_prediction, digit_predictions
