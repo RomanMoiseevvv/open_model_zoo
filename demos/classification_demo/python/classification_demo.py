@@ -26,7 +26,7 @@ import cv2
 sys.path.append(str(Path(__file__).resolve().parents[2] / 'common/python'))
 sys.path.append(str(Path(__file__).resolve().parents[2] / 'common/python/openvino/model_zoo'))
 
-from model_api.models import Classification, OutputTransform
+from model_api.models import Classification, CustomClassification, OutputTransform
 from model_api.performance_metrics import put_highlighted_text, PerformanceMetrics
 from model_api.pipelines import get_user_config, AsyncPipeline
 from model_api.adapters import create_core, OpenvinoAdapter, OVMSAdapter
@@ -110,49 +110,31 @@ def build_argparser():
 
 def draw_labels(frame, classifications, output_transform):
     frame = output_transform.resize(frame)
-    class_label = ""
-    if classifications:
-        class_label = classifications[0][1]
+    len_, digits = classifications
+    len_str = f'Digits len: {len_}    '
     font_scale = 0.7
-    label_height = cv2.getTextSize(class_label, cv2.FONT_HERSHEY_COMPLEX, font_scale, 2)[0][1]
-    initial_labels_pos =  frame.shape[0] - label_height * (int(1.5 * len(classifications)) + 1)
-
-    if (initial_labels_pos < 0):
-        initial_labels_pos = label_height
-        log.warning('Too much labels to display on this frame, some will be omitted')
+    label_width = cv2.getTextSize(len_str, cv2.FONT_HERSHEY_COMPLEX, font_scale, 2)[0][0]
+    label_height = cv2.getTextSize(len_str, cv2.FONT_HERSHEY_COMPLEX, font_scale, 2)[0][1]
+    initial_labels_pos =  frame.shape[0] - label_height * 2
     offset_y = initial_labels_pos
+    put_highlighted_text(frame, len_str, (frame.shape[1] - label_width, offset_y),
+        cv2.FONT_HERSHEY_COMPLEX, font_scale, (255, 0, 0), 2)
 
-    header = "Label:     Score:"
+    offset_y -= int(1.5 * label_height)
+    masked_digits = [str(x) if x < 10 else '_' for x in digits][:len_] + ['_'] * (5 - len_)
+    header = ",".join(masked_digits)
+    header = f"Result: {header}"
     label_width = cv2.getTextSize(header, cv2.FONT_HERSHEY_COMPLEX, font_scale, 2)[0][0]
     put_highlighted_text(frame, header, (frame.shape[1] - label_width, offset_y),
         cv2.FONT_HERSHEY_COMPLEX, font_scale, (255, 0, 0), 2)
 
-    for idx, class_label, score in classifications:
-        label = '{}. {}    {:.2f}'.format(idx, class_label, score)
-        label_width = cv2.getTextSize(label, cv2.FONT_HERSHEY_COMPLEX, font_scale, 2)[0][0]
-        offset_y += int(label_height * 1.5)
-        put_highlighted_text(frame, label, (frame.shape[1] - label_width, offset_y),
-            cv2.FONT_HERSHEY_COMPLEX, font_scale, (255, 0, 0), 2)
     return frame
 
 
 def print_raw_results(classifications, frame_id):
-    label_max_len = 0
-    if classifications:
-        label_max_len = len(max([cl[1] for cl in classifications], key=len))
-
     log.debug(' ------------------- Frame # {} ------------------ '.format(frame_id))
-
-    if label_max_len != 0:
-        log.debug(' Class ID | {:^{width}s}| Confidence '.format('Label', width=label_max_len))
-    else:
-        log.debug(' Class ID | Confidence ')
-
-    for class_id, class_label, score in classifications:
-        if class_label != "":
-            log.debug('{:^9} | {:^{width}s}| {:^10f} '.format(class_id, class_label, score, width=label_max_len))
-        else:
-            log.debug('{:^9} | {:^10f} '.format(class_id, score))
+    len_, digits = classifications
+    log.debug(f'len: {len_}, digits: {digits}')
 
 
 def main():
@@ -175,7 +157,7 @@ def main():
         'topk': args.topk,
         'path_to_labels': args.labels
     }
-    model = Classification(model_adapter, config)
+    model = CustomClassification(model_adapter, config)
     model.log_layers_info()
 
     async_pipeline = AsyncPipeline(model)
@@ -187,7 +169,9 @@ def main():
     render_metrics = PerformanceMetrics()
     presenter = None
     output_transform = None
+    size = (54, 54)
     video_writer = cv2.VideoWriter()
+        #'output.mp4', cv2.VideoWriter_fourcc(*'mp4v'), 10, size)
     ESC_KEY = 27
     key = -1
     while True:
