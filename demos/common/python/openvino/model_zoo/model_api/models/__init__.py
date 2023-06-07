@@ -19,6 +19,7 @@ from .bert import BertEmbedding, BertNamedEntityRecognition, BertQuestionAnsweri
 from .background_matting import ImageMattingWithBackground, VideoBackgroundMatting, PortraitBackgroundMatting
 from .centernet import CenterNet
 from .classification import Classification
+from .classification import CustomClassification
 from .deblurring import Deblurring
 from .detection_model import DetectionModel
 from .detr import DETR
@@ -44,6 +45,7 @@ __all__ = [
     'BertQuestionAnswering',
     'CenterNet',
     'Classification',
+    'CustomClassification',
     'CTPN',
     'Deblurring',
     'DetectionModel',
